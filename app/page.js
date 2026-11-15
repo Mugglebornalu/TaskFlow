@@ -9,7 +9,7 @@ const seedTasks=[{id:"t1",title:"Prepare project roadmap",description:"Outline t
 function Stat({label,value,icon,tone,foot}){return <div className="stat"><div className="stathead">{label}<i className={tone}>{icon}</i></div><b>{value}</b><small>{foot}</small></div>}
 function Empty({title,text}){return <div className="empty"><b>{title}</b><p>{text}</p></div>}
 export default function Home(){
- const [tasks,setTasks]=useState([]),[projects,setProjects]=useState([]),[name,setName]=useState("welcome back"),[ready,setReady]=useState(false);
+ const [tasks,setTasks]=useState([]),[projects,setProjects]=useState([]),[name,setName]=useState("there"),[ready,setReady]=useState(false);
  const [view,setView]=useState("Dashboard"),[project,setProject]=useState("all"),[selected,setSelected]=useState(null),[filter,setFilter]=useState("All"),[search,setSearch]=useState("");
  const [month,setMonth]=useState(new Date()),[day,setDay]=useState(today()),[taskModal,setTaskModal]=useState(false),[projectModal,setProjectModal]=useState(false),[editId,setEditId]=useState(null),[editProject,setEditProject]=useState(null),[update,setUpdate]=useState("");
  const blankTask=()=>({title:"",description:"",projectId:project==="all"?(projects[0]?.id||""):project,startDate:today(),dueDate:plus(7),status:"Not started",priority:"Medium",progress:0});
