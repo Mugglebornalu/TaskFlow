@@ -1,236 +1,51 @@
 "use client";
-
-import { useEffect, useMemo, useState } from "react";
-
-const STORAGE_KEY = "taskflow.tasks.v1";
-const today = () => new Date().toISOString().slice(0, 10);
-const plusDays = (n) => {
-  const d = new Date();
-  d.setDate(d.getDate() + n);
-  return d.toISOString().slice(0, 10);
-};
-
-const starterTasks = [
-  {
-    id: "welcome-1",
-    title: "Plan your first project",
-    description: "Add a few milestones, set realistic dates and keep your progress up to date.",
-    startDate: today(),
-    dueDate: plusDays(5),
-    status: "In progress",
-    priority: "High",
-    progress: 35,
-    createdAt: new Date().toISOString(),
-    updates: [{ id: "u1", text: "Welcome to Taskflow. Your task workspace is ready.", date: new Date().toISOString() }]
-  },
-  {
-    id: "welcome-2",
-    title: "Review weekly priorities",
-    description: "Decide what matters most this week.",
-    startDate: today(),
-    dueDate: plusDays(2),
-    status: "Not started",
-    priority: "Medium",
-    progress: 0,
-    createdAt: new Date().toISOString(),
-    updates: []
-  },
-  {
-    id: "welcome-3",
-    title: "Ship a small improvement",
-    description: "A small completed task builds momentum.",
-    startDate: plusDays(-2),
-    dueDate: plusDays(-1),
-    status: "Done",
-    priority: "Low",
-    progress: 100,
-    createdAt: new Date().toISOString(),
-    updates: [{ id: "u3", text: "Marked as complete.", date: new Date().toISOString() }]
-  }
-];
-
-function prettyDate(value) {
-  if (!value) return "No date";
-  return new Date(`${value}T12:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
-}
-function daysLeft(value) {
-  if (!value) return null;
-  return Math.ceil((new Date(`${value}T23:59:59`).getTime() - new Date().setHours(0,0,0,0)) / 86400000);
-}
-function makeId() {
-  return typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : String(Date.now());
-}
-
-export default function Home() {
-  const [tasks, setTasks] = useState([]);
-  const [ready, setReady] = useState(false);
-  const [filter, setFilter] = useState("All");
-  const [query, setQuery] = useState("");
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editingId, setEditingId] = useState(null);
-  const [selectedId, setSelectedId] = useState(null);
-  const [updateText, setUpdateText] = useState("");
-  const [form, setForm] = useState({
-    title: "", description: "", startDate: today(), dueDate: plusDays(7),
-    status: "Not started", priority: "Medium", progress: 0
-  });
-
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      setTasks(saved ? JSON.parse(saved) : starterTasks);
-    } catch {
-      setTasks(starterTasks);
-    }
-    setReady(true);
-  }, []);
-
-  useEffect(() => {
-    if (ready) localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
-  }, [tasks, ready]);
-
-  const selectedTask = tasks.find(t => t.id === selectedId) || null;
-  const filteredTasks = useMemo(() => tasks.filter(task => {
-    const matchesFilter = filter === "All" || task.status === filter;
-    const matchesQuery = `${task.title} ${task.description}`.toLowerCase().includes(query.toLowerCase());
-    return matchesFilter && matchesQuery;
-  }).sort((a,b) => (a.dueDate || "9999").localeCompare(b.dueDate || "9999")), [tasks, filter, query]);
-
-  const completed = tasks.filter(t => t.status === "Done").length;
-  const overall = tasks.length ? Math.round(tasks.reduce((sum,t) => sum + Number(t.progress || 0), 0) / tasks.length) : 0;
-  const overdue = tasks.filter(t => t.status !== "Done" && daysLeft(t.dueDate) < 0).length;
-
-  function openNew() {
-    setEditingId(null);
-    setForm({ title: "", description: "", startDate: today(), dueDate: plusDays(7), status: "Not started", priority: "Medium", progress: 0 });
-    setModalOpen(true);
-  }
-  function openEdit(task) {
-    setEditingId(task.id);
-    setForm({ title: task.title, description: task.description || "", startDate: task.startDate || "", dueDate: task.dueDate || "", status: task.status, priority: task.priority, progress: task.progress });
-    setModalOpen(true);
-  }
-  function saveTask(e) {
-    e.preventDefault();
-    if (!form.title.trim()) return;
-    const progress = form.status === "Done" ? 100 : Number(form.progress);
-    if (editingId) {
-      setTasks(current => current.map(t => t.id === editingId ? { ...t, ...form, title: form.title.trim(), progress, updates: [...(t.updates || []), { id: makeId(), text: "Task details updated.", date: new Date().toISOString() }] } : t));
-    } else {
-      const task = { ...form, id: makeId(), title: form.title.trim(), progress, createdAt: new Date().toISOString(), updates: [{ id: makeId(), text: "Task created.", date: new Date().toISOString() }] };
-      setTasks(current => [task, ...current]);
-      setSelectedId(task.id);
-    }
-    setModalOpen(false);
-  }
-  function updateTask(id, patch, message) {
-    setTasks(current => current.map(t => t.id === id ? {
-      ...t, ...patch,
-      updates: message ? [...(t.updates || []), { id: makeId(), text: message, date: new Date().toISOString() }] : (t.updates || [])
-    } : t));
-  }
-  function addUpdate(e) {
-    e.preventDefault();
-    if (!selectedTask || !updateText.trim()) return;
-    updateTask(selectedTask.id, {}, updateText.trim());
-    setUpdateText("");
-  }
-  function deleteTask(id) {
-    if (!window.confirm("Delete this task and its update history?")) return;
-    setTasks(current => current.filter(t => t.id !== id));
-    if (selectedId === id) setSelectedId(null);
-  }
-
-  return (
-    <main className="app-shell">
-      <aside className="sidebar">
-        <div className="brand"><div className="brand-mark">t</div><span>taskflow</span></div>
-        <div className="workspace-label">WORKSPACE</div>
-        <button className="nav-item active"><span className="nav-icon">▦</span> My tasks <span className="nav-count">{tasks.length}</span></button>
-        <div className="sidebar-bottom">
-          <div className="sidebar-note">
-            <div className="note-icon">✦</div>
-            <strong>Make progress visible.</strong>
-            <p>Small steps add up. Keep your next action clear.</p>
-          </div>
-          <div className="profile"><div className="avatar">Y</div><div><strong>Your workspace</strong><small>Personal plan</small></div><span className="more">···</span></div>
-        </div>
-      </aside>
-
-      <section className="main-area">
-        <header className="topbar">
-          <div className="breadcrumb">Workspace <span>/</span> <strong>My tasks</strong></div>
-          <div className="top-actions"><span className="today-label">{new Date().toLocaleDateString(undefined,{weekday:"short",month:"short",day:"numeric"})}</span><div className="top-avatar">Y</div></div>
-        </header>
-
-        <div className="content">
-          <div className="page-heading">
-            <div><div className="eyebrow">YOUR OVERVIEW</div><h1>Good things take <em>progress.</em></h1><p>Keep your plans moving, one task at a time.</p></div>
-            <button className="primary-button" onClick={openNew}><span>＋</span> New task</button>
-          </div>
-
-          <div className="stats-grid">
-            <div className="stat-card"><div className="stat-top"><span>Total tasks</span><span className="stat-icon lavender">▦</span></div><div className="stat-value">{tasks.length}</div><div className="stat-foot">Across your workspace</div></div>
-            <div className="stat-card"><div className="stat-top"><span>Completed</span><span className="stat-icon mint">✓</span></div><div className="stat-value">{completed}<small> / {tasks.length}</small></div><div className="stat-foot">{tasks.length ? Math.round(completed/tasks.length*100) : 0}% of all tasks</div></div>
-            <div className="stat-card"><div className="stat-top"><span>Overall progress</span><span className="stat-icon peach">↗</span></div><div className="stat-value">{overall}<small>%</small></div><div className="mini-track"><span style={{width:`${overall}%`}} /></div></div>
-            <div className="stat-card"><div className="stat-top"><span>Overdue</span><span className="stat-icon rose">!</span></div><div className="stat-value">{overdue}</div><div className="stat-foot">{overdue ? "Needs your attention" : "You're all caught up"}</div></div>
-          </div>
-
-          <div className="section-heading"><div><h2>Task timeline</h2><p>Your work, ordered by due date.</p></div><div className="view-label"><span className="view-dot" /> Live overview</div></div>
-          <div className="task-toolbar">
-            <div className="filters">{["All","Not started","In progress","Done"].map(item => <button key={item} className={filter===item?"filter active-filter":"filter"} onClick={()=>setFilter(item)}>{item}{item==="All" && <span>{tasks.length}</span>}</button>)}</div>
-            <div className="search-box"><span>⌕</span><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search tasks..." /></div>
-          </div>
-
-          <div className="task-layout">
-            <div className="task-list">
-              {filteredTasks.length === 0 ? <div className="empty-state"><div>✦</div><h3>No tasks found</h3><p>Try another filter or create a new task.</p><button className="text-button" onClick={openNew}>＋ Add your first task</button></div> :
-                filteredTasks.map(task => {
-                  const left = daysLeft(task.dueDate);
-                  return <button key={task.id} className={`task-row ${selectedId===task.id?"selected":""}`} onClick={()=>setSelectedId(task.id)}>
-                    <div className={`status-check ${task.status==="Done"?"checked":""}`}>{task.status==="Done"?"✓":""}</div>
-                    <div className="task-main"><div className="task-title-line"><strong>{task.title}</strong><span className={`priority priority-${task.priority.toLowerCase()}`}>{task.priority}</span></div><p>{task.description || "No description added"}</p><div className="task-meta"><span className="date-meta">◷ {prettyDate(task.startDate)} – {prettyDate(task.dueDate)}</span><span className={`status-pill status-${task.status.toLowerCase().replace(" ","-")}`}>{task.status}</span></div></div>
-                    <div className="task-progress"><div className="progress-number">{task.progress}%</div><div className="progress-track"><span style={{width:`${task.progress}%`}} /></div><small>{left===null?"No due date":left<0?`${Math.abs(left)}d overdue`:left===0?"Due today":`${left}d left`}</small></div>
-                    <span className="row-chevron">›</span>
-                  </button>;
-                })}
-              <button className="add-task-row" onClick={openNew}>＋ <span>Add a task</span></button>
-            </div>
-
-            <aside className="detail-panel">
-              {selectedTask ? <>
-                <div className="detail-top"><span className="detail-label">TASK DETAILS</span><button className="icon-button" onClick={()=>openEdit(selectedTask)} aria-label="Edit task">✎</button></div>
-                <h3>{selectedTask.title}</h3><p className="detail-description">{selectedTask.description || "Add a description to give this task more context."}</p>
-                <div className="detail-divider" />
-                <div className="detail-field"><span>Status</span><select value={selectedTask.status} onChange={e=>updateTask(selectedTask.id,{status:e.target.value,progress:e.target.value==="Done"?100:selectedTask.progress},`Status changed to ${e.target.value}.`)}><option>Not started</option><option>In progress</option><option>Done</option></select></div>
-                <div className="detail-field"><span>Priority</span><select value={selectedTask.priority} onChange={e=>updateTask(selectedTask.id,{priority:e.target.value},`Priority changed to ${e.target.value}.`)}><option>Low</option><option>Medium</option><option>High</option></select></div>
-                <div className="detail-field"><span>Start date</span><strong>{prettyDate(selectedTask.startDate)}</strong></div>
-                <div className="detail-field"><span>Due date</span><strong>{prettyDate(selectedTask.dueDate)}</strong></div>
-                <div className="detail-divider" />
-                <div className="progress-heading"><strong>Progress</strong><b>{selectedTask.progress}%</b></div>
-                <input className="range-input" type="range" min="0" max="100" step="5" value={selectedTask.progress} onChange={e=>updateTask(selectedTask.id,{progress:Number(e.target.value),status:Number(e.target.value)===100?"Done":Number(e.target.value)>0?"In progress":"Not started"})} />
-                <div className="range-labels"><span>Just started</span><span>Completed</span></div>
-                <div className="detail-divider" />
-                <div className="updates-heading"><strong>Activity & updates</strong><span>{(selectedTask.updates||[]).length}</span></div>
-                <form className="update-form" onSubmit={addUpdate}><input value={updateText} onChange={e=>setUpdateText(e.target.value)} placeholder="Write an update..." /><button type="submit" disabled={!updateText.trim()}>＋</button></form>
-                <div className="updates-list">{(selectedTask.updates||[]).slice().reverse().map(update=><div className="update-item" key={update.id}><div className="update-dot" /><div><p>{update.text}</p><small>{new Date(update.date).toLocaleString(undefined,{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}</small></div></div>)}</div>
-                <button className="delete-button" onClick={()=>deleteTask(selectedTask.id)}>Delete task</button>
-              </> : <div className="detail-empty"><div className="detail-empty-icon">↖</div><h3>Choose a task</h3><p>Select a task to see its dates, progress and activity updates.</p></div>}
-            </aside>
-          </div>
-          <footer>Made for focused work <span>·</span> Your tasks are saved in this browser</footer>
-        </div>
-      </section>
-
-      {modalOpen && <div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)setModalOpen(false);}}><form className="modal" onSubmit={saveTask}>
-        <div className="modal-heading"><div><div className="eyebrow">{editingId?"EDIT TASK":"NEW TASK"}</div><h2>{editingId?"Update task":"Create a task"}</h2></div><button type="button" className="icon-button" onClick={()=>setModalOpen(false)}>×</button></div>
-        <label>Task name<input autoFocus required maxLength="100" value={form.title} onChange={e=>setForm({...form,title:e.target.value})} placeholder="e.g. Prepare project proposal" /></label>
-        <label>Description <span className="optional">Optional</span><textarea rows="3" value={form.description} onChange={e=>setForm({...form,description:e.target.value})} placeholder="What needs to get done?" /></label>
-        <div className="form-two"><label>Start date<input type="date" value={form.startDate} onChange={e=>setForm({...form,startDate:e.target.value})} /></label><label>Due date<input type="date" value={form.dueDate} min={form.startDate || undefined} onChange={e=>setForm({...form,dueDate:e.target.value})} /></label></div>
-        <div className="form-two"><label>Priority<select value={form.priority} onChange={e=>setForm({...form,priority:e.target.value})}><option>Low</option><option>Medium</option><option>High</option></select></label><label>Status<select value={form.status} onChange={e=>setForm({...form,status:e.target.value,progress:e.target.value==="Done"?100:form.progress})}><option>Not started</option><option>In progress</option><option>Done</option></select></label></div>
-        <label className="progress-form-label">Progress <strong>{form.status==="Done"?100:form.progress}%</strong><input type="range" min="0" max="100" step="5" value={form.status==="Done"?100:form.progress} onChange={e=>setForm({...form,progress:Number(e.target.value),status:Number(e.target.value)===100?"Done":Number(e.target.value)>0?"In progress":"Not started"})} /></label>
-        <div className="modal-actions"><button type="button" className="secondary-button" onClick={()=>setModalOpen(false)}>Cancel</button><button className="primary-button" type="submit">{editingId?"Save changes":"Create task"}</button></div>
-      </form></div>}
-    </main>
-  );
+import {useEffect,useMemo,useState} from "react";
+const TK="taskflow.tasks.v1", PK="taskflow.projects.v1", UK="taskflow.user.v1";
+const iso=(d)=>d.toISOString().slice(0,10), today=()=>iso(new Date()), plus=(n)=>{let d=new Date();d.setDate(d.getDate()+n);return iso(d)};
+const id=()=>crypto.randomUUID(), fmt=(s,opt={month:"short",day:"numeric"})=>s?new Date(s+"T12:00:00").toLocaleDateString(undefined,opt):"Not set";
+const diff=s=>s?Math.ceil((new Date(s+"T23:59:59")-new Date().setHours(0,0,0,0))/86400000):null;
+const seedProjects=[{id:"p-work",name:"Work",color:"#7668dc",description:"Professional goals"},{id:"p-personal",name:"Personal",color:"#39a783",description:"Life admin and personal goals"},{id:"p-learning",name:"Learning",color:"#d99a51",description:"Skills and development"}];
+const seedTasks=[{id:"t1",title:"Prepare project roadmap",description:"Outline the main milestones and delivery dates.",projectId:"p-work",startDate:today(),dueDate:plus(3),status:"In progress",priority:"High",progress:45,updates:[]},{id:"t2",title:"Review weekly priorities",description:"Choose the most important outcomes for this week.",projectId:"p-personal",startDate:today(),dueDate:plus(1),status:"Not started",priority:"Medium",progress:0,updates:[]},{id:"t3",title:"Complete a learning session",description:"Spend focused time on a new skill.",projectId:"p-learning",startDate:plus(1),dueDate:plus(5),status:"Not started",priority:"Low",progress:0,updates:[]}];
+function Stat({label,value,icon,tone,foot}){return <div className="stat"><div className="stathead">{label}<i className={tone}>{icon}</i></div><b>{value}</b><small>{foot}</small></div>}
+function Empty({title,text}){return <div className="empty"><b>{title}</b><p>{text}</p></div>}
+export default function Home(){
+ const [tasks,setTasks]=useState([]),[projects,setProjects]=useState([]),[name,setName]=useState("there"),[ready,setReady]=useState(false);
+ const [view,setView]=useState("Dashboard"),[project,setProject]=useState("all"),[selected,setSelected]=useState(null),[filter,setFilter]=useState("All"),[search,setSearch]=useState("");
+ const [month,setMonth]=useState(new Date()),[day,setDay]=useState(today()),[taskModal,setTaskModal]=useState(false),[projectModal,setProjectModal]=useState(false),[editId,setEditId]=useState(null),[editProject,setEditProject]=useState(null),[update,setUpdate]=useState("");
+ const blankTask=()=>({title:"",description:"",projectId:project==="all"?(projects[0]?.id||""):project,startDate:today(),dueDate:plus(7),status:"Not started",priority:"Medium",progress:0});
+ const [form,setForm]=useState(blankTask),[pform,setPform]=useState({name:"",description:"",color:"#7668dc"});
+ useEffect(()=>{try{setTasks(JSON.parse(localStorage.getItem(TK))||seedTasks);setProjects(JSON.parse(localStorage.getItem(PK))||seedProjects);setName(localStorage.getItem(UK)||"there")}catch{setTasks(seedTasks);setProjects(seedProjects)}setReady(true)},[]);
+ useEffect(()=>{if(ready){localStorage.setItem(TK,JSON.stringify(tasks));localStorage.setItem(PK,JSON.stringify(projects));localStorage.setItem(UK,name)}},[tasks,projects,name,ready]);
+ const list=useMemo(()=>tasks.filter(t=>(project==="all"||t.projectId===project)&&(filter==="All"||t.status===filter)&&`${t.title} ${t.description}`.toLowerCase().includes(search.toLowerCase())).sort((a,b)=>(a.dueDate||"9999").localeCompare(b.dueDate||"9999")),[tasks,project,filter,search]);
+ const done=tasks.filter(t=>t.status==="Done").length,avg=tasks.length?Math.round(tasks.reduce((s,t)=>s+(+t.progress||0),0)/tasks.length):0,late=tasks.filter(t=>t.status!=="Done"&&diff(t.dueDate)<0).length;
+ const upcoming=tasks.filter(t=>t.status!=="Done"&&diff(t.dueDate)>=0&&diff(t.dueDate)<=7).sort((a,b)=>a.dueDate.localeCompare(b.dueDate)).slice(0,5);
+ const greeting=new Date().getHours()<12?"Good morning":new Date().getHours()<18?"Good afternoon":"Good evening";
+ function openTask(t=null){setEditId(t?.id||null);setForm(t?{...t}:{...blankTask()});setTaskModal(true)}
+ function saveTask(e){e.preventDefault();if(!form.title.trim())return;let pct=form.status==="Done"?100:+form.progress;if(editId)setTasks(old=>old.map(t=>t.id===editId?{...t,...form,title:form.title.trim(),progress:pct,updates:[...(t.updates||[]),{id:id(),text:"Task details updated.",date:new Date().toISOString()}]}:t));else setTasks(old=>[{...form,id:id(),title:form.title.trim(),progress:pct,updates:[{id:id(),text:"Task created.",date:new Date().toISOString()}]},...old]);setTaskModal(false)}
+ function patch(tid,changes,msg){setTasks(old=>old.map(t=>t.id===tid?{...t,...changes,updates:msg?[...(t.updates||[]),{id:id(),text:msg,date:new Date().toISOString()}]:(t.updates||[])}:t))}
+ function saveProject(e){e.preventDefault();if(!pform.name.trim())return;if(editProject)setProjects(old=>old.map(p=>p.id===editProject?{...p,...pform,name:pform.name.trim()}:p));else setProjects(old=>[...old,{...pform,id:id(),name:pform.name.trim()}]);setProjectModal(false)}
+ function openProject(p=null){setEditProject(p?.id||null);setPform(p?{name:p.name,description:p.description||"",color:p.color}:{name:"",description:"",color:"#7668dc"});setProjectModal(true)}
+ function removeProject(p){if(!confirm(`Delete ${p.name}? Its tasks will become unassigned.`))return;setProjects(old=>old.filter(x=>x.id!==p.id));setTasks(old=>old.map(t=>t.projectId===p.id?{...t,projectId:""}:t));if(project===p.id)setProject("all")}
+ function removeTask(tid){if(confirm("Delete this task?")){setTasks(old=>old.filter(t=>t.id!==tid));setSelected(null)}}
+ const monthStart=new Date(month.getFullYear(),month.getMonth(),1),gridStart=new Date(monthStart);gridStart.setDate(1-monthStart.getDay());
+ const cells=Array.from({length:42},(_,i)=>{let d=new Date(gridStart);d.setDate(gridStart.getDate()+i);return d});
+ const scheduled=tasks.filter(t=>t.startDate||t.dueDate),dayTasks=scheduled.filter(t=>(t.startDate&&t.startDate<=day&&t.dueDate&&t.dueDate>=day)||t.startDate===day||t.dueDate===day);
+ const projectName=pid=>projects.find(p=>p.id===pid)?.name||"No project", projectColor=pid=>projects.find(p=>p.id===pid)?.color||"#aaa";
+ return <main className="app"><aside className="sidebar"><div className="brand"><i>t</i> taskflow</div><small className="navcap">WORKSPACE</small>
+ {["Dashboard","My tasks","Calendar"].map((v,i)=><button key={v} className={`nav ${view===v?"active":""}`} onClick={()=>{setView(v);if(v==="My tasks")setProject("all")}}><span>{["▦","☷","▦"][i]}</span>{v}{v==="My tasks"&&<em>{tasks.length}</em>}</button>)}
+ <div className="projectcap">PROJECTS <button onClick={()=>openProject()}>＋</button></div>
+ {projects.map(p=><button className={`projectnav ${project===p.id?"chosen":""}`} key={p.id} onClick={()=>{setProject(p.id);setView("My tasks")}}><i style={{background:p.color}}/>{p.name}<small>{tasks.filter(t=>t.projectId===p.id).length}</small></button>)}
+ <button className="addproject" onClick={()=>openProject()}>＋ Create a project</button><div className="sidebottom"><div className="tip"><b>✦ Make progress visible.</b><p>Turn big goals into small, achievable steps.</p></div><div className="profile"><i>{(name[0]||"Y").toUpperCase()}</i><span><b>{name}</b><small>Personal workspace</small></span><button onClick={()=>{let n=prompt("What should we call you?",name);if(n!==null)setName(n.trim()||"there")}}>···</button></div></div></aside>
+ <section className="main"><header className="topbar">Workspace <span>/</span> <b>{view}</b><aside>{new Date().toLocaleDateString(undefined,{weekday:"short",month:"short",day:"numeric"})}<i>{(name[0]||"Y").toUpperCase()}</i></aside></header><div className="content">
+ {view==="Dashboard"&&<><div className="heading"><div><small className="eyebrow">YOUR WORKSPACE</small><h1>{greeting}, {name} <span>✦</span></h1><p>Here's what's happening with your work today.</p></div><button className="primary" onClick={()=>openTask()}>＋ New task</button></div>
+ <div className="stats"><Stat label="Total tasks" value={tasks.length} icon="☷" tone="purple" foot="Across all projects"/><Stat label="Completed" value={`${done} / ${tasks.length}`} icon="✓" tone="green" foot={`${tasks.length?Math.round(done/tasks.length*100):0}% completion rate`}/><Stat label="Overall progress" value={`${avg}%`} icon="↗" tone="orange" foot={<span className="bar"><i style={{width:avg+"%"}}/></span>}/><Stat label="Overdue" value={late} icon="!" tone="red" foot={late?"Needs your attention":"You're all caught up"}/></div>
+ <div className="dashgrid"><section className="panel"><div className="panelhead"><div><h2>My tasks</h2><p>Your next actions, sorted by due date.</p></div><button className="link" onClick={()=>setView("My tasks")}>View all →</button></div>{tasks.length?tasks.slice().sort((a,b)=>(a.dueDate||"9999").localeCompare(b.dueDate||"9999")).slice(0,5).map(t=><button className="taskline" key={t.id} onClick={()=>{setSelected(t.id);setView("My tasks")}}><i className={t.status==="Done"?"checked":""}>{t.status==="Done"?"✓":""}</i><span><b>{t.title}</b><small>{projectName(t.projectId)} · Due {fmt(t.dueDate)}</small></span><strong>{t.progress}%</strong><em className={"status "+t.status.toLowerCase().replace(" ","-")}>{t.status}</em></button>):<Empty title="No tasks yet" text="Create your first task to get started."/>}</section>
+ <section className="panel"><div className="panelhead"><div><h2>Coming up</h2><p>Due in the next 7 days.</p></div><b className="count">{upcoming.length}</b></div>{upcoming.length?upcoming.map(t=><div className="upcoming" key={t.id}><i><b>{new Date(t.dueDate+"T12:00:00").getDate()}</b><small>{new Date(t.dueDate+"T12:00:00").toLocaleDateString(undefined,{month:"short"})}</small></i><span><b>{t.title}</b><small>{projectName(t.projectId)}</small></span><em>{diff(t.dueDate)===0?"Today":diff(t.dueDate)+"d"}</em></div>):<Empty title="A clear week ahead" text="No tasks due in the next 7 days."/>}</section></div>
+ <section className="panel projectoverview"><div className="panelhead"><div><h2>Projects</h2><p>Progress across your areas of work.</p></div><button className="link" onClick={()=>openProject()}>＋ New project</button></div><div className="projectcards">{projects.map(p=>{let ts=tasks.filter(t=>t.projectId===p.id),pct=ts.length?Math.round(ts.reduce((s,t)=>s+t.progress,0)/ts.length):0;return <button className="projectcard" key={p.id} onClick={()=>{setProject(p.id);setView("My tasks")}}><b><i style={{background:p.color}}/>{p.name}<small>{ts.length} tasks</small></b><p>{p.description||"No description"}</p><div className="bar"><i style={{width:pct+"%",background:p.color}}/></div><small>{pct}% complete</small></button>})}<button className="projectcard create" onClick={()=>openProject()}><b>＋ Create a project</b><small>Group related tasks together</small></button></div></section></>}
+ {view==="My tasks"&&<><div className="heading"><div><small className="eyebrow">TASK MANAGEMENT</small><h1>{project==="all"?"My tasks":projectName(project)}</h1><p>Everything you need to move forward.</p></div><button className="primary" onClick={()=>openTask()}>＋ New task</button></div><div className="toolbar"><div>{["All","Not started","In progress","Done"].map(s=><button className={filter===s?"tab selectedtab":"tab"} key={s} onClick={()=>setFilter(s)}>{s}</button>)}</div><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="⌕  Search tasks..."/></div><div className="taskcards">{list.length?list.map(t=><article className="taskcard" key={t.id}><div className="taskcardhead"><button onClick={()=>setSelected(selected===t.id?null:t.id)}><b>{t.title}</b></button><span className={"priority "+t.priority.toLowerCase()}>{t.priority}</span></div><p>{t.description||"No description"}</p><div className="taskmeta"><span><i style={{background:projectColor(t.projectId)}}/>{projectName(t.projectId)}</span><span>{fmt(t.startDate)} – {fmt(t.dueDate)}</span><span className={"status "+t.status.toLowerCase().replace(" ","-")}>{t.status}</span></div><div className="bar"><i style={{width:t.progress+"%"}}/></div><small>{t.progress}% complete</small><div className="cardactions"><button onClick={()=>openTask(t)}>Edit</button><button onClick={()=>removeTask(t.id)}>Delete</button></div>{selected===t.id&&<div className="expanded"><label>Progress <b>{t.progress}%</b></label><input type="range" min="0" max="100" step="5" value={t.progress} onChange={e=>patch(t.id,{progress:+e.target.value,status:+e.target.value===100?"Done":+e.target.value>0?"In progress":"Not started"})}/><form onSubmit={e=>{e.preventDefault();if(update.trim()){patch(t.id,{},update.trim());setUpdate("")}}}><input value={update} onChange={e=>setUpdate(e.target.value)} placeholder="Add an activity update..."/><button disabled={!update.trim()}>Post</button></form>{(t.updates||[]).slice(-3).reverse().map(u=><small key={u.id}>{u.text} · {new Date(u.date).toLocaleDateString()}</small>)}</div>}</article>):<Empty title="No tasks found" text="Change your filters or create a new task."/>}</div></>}
+ {view==="Calendar"&&<><div className="heading"><div><small className="eyebrow">PLAN YOUR TIME</small><h1>Calendar</h1><p>See task schedules, start dates and deadlines.</p></div><button className="primary" onClick={()=>openTask()}>＋ New task</button></div><section className="calendar"><div className="calhead"><div><button onClick={()=>setMonth(new Date(month.getFullYear(),month.getMonth()-1,1))}>‹</button><h2>{month.toLocaleDateString(undefined,{month:"long",year:"numeric"})}</h2><button onClick={()=>setMonth(new Date(month.getFullYear(),month.getMonth()+1,1))}>›</button><button className="todaybtn" onClick={()=>setMonth(new Date())}>Today</button></div><small>▰ Start date　 <span>◆ Due date</span></small></div><div className="calgrid">{["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d=><b className="weekday" key={d}>{d}</b>)}{cells.map((d,i)=>{let k=iso(d),items=scheduled.filter(t=>(t.startDate&&t.startDate<=k&&t.dueDate&&t.dueDate>=k)||t.startDate===k||t.dueDate===k);return <button key={i} onClick={()=>setDay(k)} className={`calcell ${d.getMonth()!==month.getMonth()?"muted":""} ${k===today()?"today":""} ${k===day?"dayactive":""}`}><b>{d.getDate()}</b>{items.slice(0,3).map(t=><span key={t.id} className={t.dueDate===k?"dueevent":"event"}>{t.startDate===k?"▶ ":""}{t.dueDate===k?"◆ ":""}{t.title}</span>)}{items.length>3&&<small>+{items.length-3} more</small>}</button>})}</div><div className="daydetail"><div><b>{fmt(day,{weekday:"long",month:"long",day:"numeric",year:"numeric"})}</b><small>Tasks scheduled for this day</small></div><div>{dayTasks.length?dayTasks.map(t=><button key={t.id} onClick={()=>{setSelected(t.id);setView("My tasks")}}><b>{t.title}</b><small>{projectName(t.projectId)} · {t.status}</small></button>):<small>No tasks scheduled for this date.</small>}</div></div></section></>}
+ </div></section>
+ {taskModal&&<div className="overlay" onMouseDown={e=>e.target===e.currentTarget&&setTaskModal(false)}><form className="modal" onSubmit={saveTask}><header><div><small className="eyebrow">{editId?"EDIT TASK":"NEW TASK"}</small><h2>{editId?"Update task":"Create a task"}</h2></div><button type="button" onClick={()=>setTaskModal(false)}>×</button></header><label>Task name<input required autoFocus value={form.title} onChange={e=>setForm({...form,title:e.target.value})} placeholder="e.g. Prepare project proposal"/></label><label>Description<textarea rows="3" value={form.description} onChange={e=>setForm({...form,description:e.target.value})} placeholder="Add context..."/></label><label>Project<select value={form.projectId||""} onChange={e=>setForm({...form,projectId:e.target.value})}><option value="">No project</option>{projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label><div className="formgrid"><label>Start date<input type="date" value={form.startDate||""} onChange={e=>setForm({...form,startDate:e.target.value})}/></label><label>Due date<input type="date" value={form.dueDate||""} onChange={e=>setForm({...form,dueDate:e.target.value})}/></label><label>Priority<select value={form.priority} onChange={e=>setForm({...form,priority:e.target.value})}><option>Low</option><option>Medium</option><option>High</option></select></label><label>Status<select value={form.status} onChange={e=>setForm({...form,status:e.target.value,progress:e.target.value==="Done"?100:form.progress})}><option>Not started</option><option>In progress</option><option>Done</option></select></label></div><label>Progress: {form.status==="Done"?100:form.progress}%<input type="range" min="0" max="100" step="5" value={form.status==="Done"?100:form.progress} onChange={e=>setForm({...form,progress:+e.target.value,status:+e.target.value===100?"Done":+e.target.value>0?"In progress":"Not started"})}/></label><footer><button type="button" className="secondary" onClick={()=>setTaskModal(false)}>Cancel</button><button className="primary">{editId?"Save changes":"Create task"}</button></footer></form></div>}
+ {projectModal&&<div className="overlay" onMouseDown={e=>e.target===e.currentTarget&&setProjectModal(false)}><form className="modal smallmodal" onSubmit={saveProject}><header><div><small className="eyebrow">PROJECT</small><h2>{editProject?"Edit project":"Create a project"}</h2></div><button type="button" onClick={()=>setProjectModal(false)}>×</button></header><label>Project name<input required autoFocus value={pform.name} onChange={e=>setPform({...pform,name:e.target.value})} placeholder="e.g. Website redesign"/></label><label>Description<textarea rows="2" value={pform.description} onChange={e=>setPform({...pform,description:e.target.value})}/></label><label>Project colour<input type="color" value={pform.color} onChange={e=>setPform({...pform,color:e.target.value})}/></label><footer>{editProject&&<button type="button" className="danger" onClick={()=>{let p=projects.find(x=>x.id===editProject);if(p)removeProject(p);setProjectModal(false)}}>Delete project</button>}<button type="button" className="secondary" onClick={()=>setProjectModal(false)}>Cancel</button><button className="primary">{editProject?"Save project":"Create project"}</button></footer></form></div>}
+ </main>
 }
